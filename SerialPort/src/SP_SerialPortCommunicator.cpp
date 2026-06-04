@@ -35,7 +35,7 @@ SOFTWARE.
 #include <QTimer>
 
 #include <QLoggingCategory>
-Q_LOGGING_CATEGORY(lcSerial, "serial") // logging category for everything related to serial communication
+Q_LOGGING_CATEGORY(lcSerial, "serial.comm") // logging category for everything related to serial communication
 
 #include "SP_SerialPortWorker.h"
 
@@ -47,7 +47,7 @@ namespace SP {
 // ============================================================================
 
 SerialPortCommunicator::SerialPortCommunicator(QObject *parent, SerialPortWorker * ownWorker)
-	: QObject(parent), m_isOpen(false), m_workerThread(nullptr), m_worker(nullptr)
+	: QObject(parent), m_workerThread(nullptr), m_worker(nullptr), m_isOpen(false)
 {
 	// Create worker thread
 	m_workerThread = new QThread(this);
@@ -59,22 +59,29 @@ SerialPortCommunicator::SerialPortCommunicator(QObject *parent, SerialPortWorker
 	// Move worker to thread
 	m_worker->moveToThread(m_workerThread);
 
+	// CAUTION: we plan on working with derived worker classes and hence we cannot use the pointer-based
+	//          connect statements. Instead, we use the SIGNAL() and SLOT() syntax, as this allows
+	//          connections to overridden members in child classes.
+
 	// Connect signals for thread communication
-	connect(this, &SerialPortCommunicator::requestOpen,		m_worker, &SerialPortWorker::openPort);
-	connect(this, &SerialPortCommunicator::requestClose,	m_worker, &SerialPortWorker::closePort);
-	connect(this, &SerialPortCommunicator::requestWrite,	m_worker, &SerialPortWorker::writeData);
+	connect(this, SIGNAL(openPort(QString,int,int,int,int)),	m_worker, SLOT(onOpenPort(QString,int,int,int,int)) );
+	connect(this, SIGNAL(closePort()),							m_worker, SLOT(onClosePort()) );
+	connect(this, SIGNAL(writeData(QByteArray)),				m_worker, SLOT(onWriteData(QByteArray)) );
 
 	// Connect worker signals to our signals (just forwarded)
-	connect(m_worker, &SerialPortWorker::dataReceived,				this, &SerialPortCommunicator::dataReceived);
-	connect(m_worker, &SerialPortWorker::errorOccurred,				this, &SerialPortCommunicator::errorOccurred);
+	connect(m_worker, SIGNAL(dataReceived(QByteArray)),			this, SIGNAL(dataReceived(QByteArray)) );
+	connect(m_worker, SIGNAL(errorOccurred(QString)),			this, SIGNAL(errorOccurred(QString)) );
 
 	// Connect worker signals to our slots
-	connect(m_worker, &SerialPortWorker::connectionStatusChanged,	this, &SerialPortCommunicator::onWorkerConnectionStatusChanged);
+	connect(m_worker, SIGNAL(connectionStatusChanged(bool)),	this, SLOT(onWorkerConnectionStatusChanged(bool)) );
+
+	// Connect startup signal
+	connect(m_workerThread, SIGNAL(started()),					m_worker, SLOT(onStartup()));
 
 	// Handle thread cleanup
 	// Worker thread continues to live even if connection is broken. Worker thread is finished
 	// only by destructor and then cleans up memory.
-	connect(m_workerThread, &QThread::finished, m_worker, &QObject::deleteLater);
+	connect(m_workerThread, &QThread::finished,					m_worker, &QObject::deleteLater);
 
 	// Start the worker thread
 	m_workerThread->start();
@@ -92,6 +99,7 @@ SerialPortCommunicator::~SerialPortCommunicator() {
 			m_workerThread->wait(1000);
 		}
 	}
+	qCDebug(lcSerial) << "Destructor called";
 }
 
 
@@ -99,49 +107,33 @@ void SerialPortCommunicator::open(const QString & portName, QSerialPort::BaudRat
 								  QSerialPort::DataBits d, QSerialPort::Parity p,
 								  QSerialPort::StopBits s)
 {
-	{
-		QMutexLocker locker(&m_statusMutex);
-		if (m_isOpen) {
-			qCWarning(lcSerial) << "Serial port already/still open. Close first!";
-			return;
-		}
+	if (m_isOpen) {
+		qCWarning(lcSerial) << "Serial port already/still open. Close first!";
+		return;
 	}
 
 	// Send request to worker thread
-	emit requestOpen(portName, b, d, p, s);
+	emit openPort(portName, b, d, p, s);
 }
 
 
 void SerialPortCommunicator::close() {
-	emit requestClose();
+	emit closePort();
 }
 
 
 void SerialPortCommunicator::write(const QByteArray & binaryDataBlock) {
-	{
-		QMutexLocker locker(&m_statusMutex);
-		if (!m_isOpen) {
-			qCWarning(lcSerial) << "Attempting to write to closed port";
-			return;
-		}
+	if (!m_isOpen) {
+		qCWarning(lcSerial) << "Attempting to write to closed port";
+		return;
 	}
 
-	emit requestWrite(binaryDataBlock);
-}
-
-
-bool SerialPortCommunicator::isOpen() const {
-	QMutexLocker locker(&m_statusMutex);
-	return m_isOpen;
+	emit writeData(binaryDataBlock);
 }
 
 
 void SerialPortCommunicator::onWorkerConnectionStatusChanged(bool connected) {
-	qCDebug(lcSerial) << (connected ? "true" : "false");
-	{
-		QMutexLocker locker(&m_statusMutex);
-		m_isOpen = connected;
-	}
+	m_isOpen = connected;
 	emit connectionStatusChanged(connected);
 }
 

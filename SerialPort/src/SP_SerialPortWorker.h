@@ -54,11 +54,11 @@ public slots:
 	// via queued signal-slot connections.
 
 	/*! Open port. */
-	void openPort(const QString & portName, int baudRate, int dataBits, int parity, int stopBits);
+	void onOpenPort(const QString & portName, int baudRate, int dataBits, int parity, int stopBits);
 	/*! Close the serial connection. */
-	void closePort();
+	void onClosePort();
 	/*! Write data to open port. */
-	void writeData(const QByteArray & binaryDataBlock);
+	void onWriteData(const QByteArray & binaryDataBlock);
 
 signals:
 	/*! Emitted, when a chunk of data has been received from serial port. */
@@ -68,15 +68,19 @@ signals:
 	/*! Emitted, when serial port becomes connected or disconnected. */
 	void connectionStatusChanged(bool connected);
 
-private slots:
-	/*! Startup slot, called as first function just before worker thread is about to enter its event loop. */
+public slots:
+	/*! Startup slot, called as first function just before worker thread is about to enter its event loop.
+		Here we create the QSerialPort object (cannot be done in constructor, as this is called from GUI thread).
+	*/
 	void onStartup();
+
+private slots:
 	/*! Connected to QSerialPort::readyRead() */
 	void onReadyRead();
 	/*! Connected to QSerialPort::errorOccurred() */
 	void onErrorOccurred(QSerialPort::SerialPortError error);
 
-private:
+protected:
 	/*! The serial port we wrap (owned).
 		Created in onStartup().
 	*/

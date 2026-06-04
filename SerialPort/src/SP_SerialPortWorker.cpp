@@ -44,10 +44,11 @@ SerialPortWorker::~SerialPortWorker() {
 	if (m_serialPort != nullptr && m_serialPort->isOpen())
 		m_serialPort->close();
 	delete m_serialPort;
+	qCDebug(lcSerialWorker) << "Destructor called";
 }
 
 
-void SerialPortWorker::openPort(const QString & portName, int baudRate, int dataBits, int parity, int stopBits) {
+void SerialPortWorker::onOpenPort(const QString & portName, int baudRate, int dataBits, int parity, int stopBits) {
 	// Close any existing connection
 	if (m_serialPort->isOpen()) {
 		m_serialPort->close();
@@ -78,7 +79,7 @@ void SerialPortWorker::openPort(const QString & portName, int baudRate, int data
 }
 
 
-void SerialPortWorker::closePort() {
+void SerialPortWorker::onClosePort() {
 	if (m_serialPort != nullptr && m_serialPort->isOpen()) {
 		m_serialPort->close();
 		emit connectionStatusChanged(false);
@@ -87,7 +88,7 @@ void SerialPortWorker::closePort() {
 }
 
 
-void SerialPortWorker::writeData(const QByteArray & binaryDataBlock) {
+void SerialPortWorker::onWriteData(const QByteArray & binaryDataBlock) {
 	Q_ASSERT(m_serialPort != nullptr);
 	if (!m_serialPort->isOpen()) {
 		qCCritical(lcSerialWorker) << "Serial port is not open, cannot write data";
@@ -109,15 +110,13 @@ void SerialPortWorker::writeData(const QByteArray & binaryDataBlock) {
 
 
 void SerialPortWorker::onStartup() {
-	// create serial port if not yet created
-	if (m_serialPort == nullptr) {
-		m_serialPort = new QSerialPort(this);
-		// Connect serial port signals
-		connect(m_serialPort, &QSerialPort::readyRead,
-				this, &SerialPortWorker::onReadyRead, Qt::DirectConnection);
-		connect(m_serialPort, QOverload<QSerialPort::SerialPortError>::of(&QSerialPort::errorOccurred),
-				this, &SerialPortWorker::onErrorOccurred, Qt::DirectConnection);
-	}
+	m_serialPort = new QSerialPort(this);
+	// Connect serial port signals
+	connect(m_serialPort, SIGNAL(readyRead()),
+			this, SLOT(onReadyRead()), Qt::DirectConnection);
+	connect(m_serialPort, QOverload<QSerialPort::SerialPortError>::of(&QSerialPort::errorOccurred),
+			this, &SerialPortWorker::onErrorOccurred, Qt::DirectConnection);
+	qCDebug(lcSerialWorker) << "Startup complete";
 }
 
 

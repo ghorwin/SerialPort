@@ -60,28 +60,20 @@ public:
 	SerialPortCommunicator(QObject *parent = nullptr, SerialPortWorker * ownWorker = nullptr);
 	~SerialPortCommunicator();
 
-	/*! Attempts to open the communication.
+	/*! Attempts to open the communication (emits openPort()).
 		\warning Do not call if port is open.
 	*/
 	virtual void open(const QString & portName, QSerialPort::BaudRate b,
 			  QSerialPort::DataBits d, QSerialPort::Parity p, QSerialPort::StopBits s);
 
-	/*! Close connection. */
+	/*! Close connection (emits closePort()). */
 	void close();
 
-	/*! Sends binary package to com port. */
+	/*! Sends binary package to com port (emits writeData()). */
 	void write(const QByteArray & binaryDataBlock);
 
 	/*! Returns true, if the serial port connection is active. */
-	bool isOpen() const;
-
-protected:
-	/*! This function is called directly from worker thread and runs within the worker thread.
-		You may re-implement this function to perform time-critical package checks and write
-		a response to the worker thread using emit requestWrite().
-		Default implementation does nothing.
-	*/
-	virtual void processReceivedData(QByteArray) {}
+	bool isOpen() const { return m_isOpen; }
 
 signals:
 	/*! Emitted, when a data package was received. */
@@ -92,18 +84,17 @@ signals:
 	void connectionStatusChanged(bool connected);
 
 	// Internal signals for thread communication
-	void requestOpen(QString portName, int baudRate, int dataBits, int parity, int stopBits);
-	void requestClose();
-	void requestWrite(QByteArray data);
+
+	/*! Sent to worker thread when it should open a connection to QSerialPort. */
+	void openPort(QString portName, int baudRate, int dataBits, int parity, int stopBits);
+	/*! Sent to worker thread when it should close the QSerialPort connection. */
+	void closePort();
+	/*! Sent to worker thread when it should write data. */
+	void writeData(QByteArray data);
 
 private slots:
 	/*! Connected to SerialPortWorker::connectionStatusChanged(), updates m_isOpen  */
 	void onWorkerConnectionStatusChanged(bool connected);
-
-protected:
-	/*! Changed in onWorkerConnectionStatusChanged(). */
-	bool				m_isOpen = false;
-	mutable QMutex		m_statusMutex; // protects access to m_isOpen
 
 private:
 	/*! The actual worker thread (with own event loop) and the actual worker class that does all the work
@@ -111,6 +102,9 @@ private:
 	*/
 	QThread				*m_workerThread;
 	SerialPortWorker	*m_worker;
+
+	/*! Changed in onWorkerConnectionStatusChanged(). */
+	bool				m_isOpen = false;
 };
 
 
